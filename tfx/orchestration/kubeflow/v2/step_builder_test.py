@@ -19,6 +19,7 @@ from kfp.pipeline_spec import pipeline_spec_pb2 as pipeline_pb2
 import tensorflow as tf
 from tfx import components
 from tfx import v1 as tfx
+from tfx.dsl.auto_collect import pipeline_registry
 from tfx.dsl.components.common import importer
 from tfx.dsl.components.common import resolver
 from tfx.dsl.experimental.conditionals import conditional
@@ -56,6 +57,7 @@ class StepBuilderTest(tf.test.TestCase):
         image='gcr.io/tensorflow/tfx:latest',
         deployment_config=deployment_config,
         component_defs=component_defs,
+        pipeline_registry=pipeline_registry.get(),
         enable_cache=True)
     actual_step_spec = self._sole(my_builder.build())
     actual_component_def = self._sole(component_defs)
@@ -84,7 +86,8 @@ class StepBuilderTest(tf.test.TestCase):
         node=task,
         image='gcr.io/tensorflow/tfx:latest',  # Note this has no effect here.
         deployment_config=deployment_config,
-        component_defs=component_defs)
+        component_defs=component_defs,
+        pipeline_registry=pipeline_registry.get())
     actual_step_spec = self._sole(my_builder.build())
     actual_component_def = self._sole(component_defs)
 
@@ -112,7 +115,8 @@ class StepBuilderTest(tf.test.TestCase):
         node=task,
         image='gcr.io/tensorflow/tfx:latest',
         deployment_config=deployment_config,
-        component_defs=component_defs)
+        component_defs=component_defs,
+        pipeline_registry=pipeline_registry.get())
     actual_step_spec = self._sole(my_builder.build())
     actual_component_def = self._sole(component_defs)
 
@@ -141,7 +145,8 @@ class StepBuilderTest(tf.test.TestCase):
         image='gcr.io/tensorflow/tfx:latest',
         image_cmds=_TEST_CMDS,
         deployment_config=deployment_config,
-        component_defs=component_defs)
+        component_defs=component_defs,
+        pipeline_registry=pipeline_registry.get())
     actual_step_spec = self._sole(my_builder.build())
     actual_component_def = self._sole(component_defs)
 
@@ -171,7 +176,8 @@ class StepBuilderTest(tf.test.TestCase):
         node=example_gen,
         image='gcr.io/tensorflow/tfx:latest',
         deployment_config=deployment_config,
-        component_defs=component_defs)
+        component_defs=component_defs,
+        pipeline_registry=pipeline_registry.get())
     actual_step_spec = self._sole(my_builder.build())
     actual_component_def = self._sole(component_defs)
 
@@ -204,7 +210,8 @@ class StepBuilderTest(tf.test.TestCase):
     my_builder = step_builder.StepBuilder(
         node=impt,
         deployment_config=deployment_config,
-        component_defs=component_defs)
+        component_defs=component_defs,
+        pipeline_registry=pipeline_registry.get())
     actual_step_spec = self._sole(my_builder.build())
     actual_component_def = self._sole(component_defs)
 
@@ -232,7 +239,8 @@ class StepBuilderTest(tf.test.TestCase):
       my_builder = step_builder.StepBuilder(
           node=impt,
           deployment_config=deployment_config,
-          component_defs=component_defs)
+          component_defs=component_defs,
+          pipeline_registry=pipeline_registry.get())
       actual_step_spec = self._sole(my_builder.build())
     actual_component_def = self._sole(component_defs)
 
@@ -265,7 +273,8 @@ class StepBuilderTest(tf.test.TestCase):
         node=latest_blessed_resolver,
         deployment_config=deployment_config,
         pipeline_info=test_pipeline_info,
-        component_defs=component_defs)
+        component_defs=component_defs,
+        pipeline_registry=pipeline_registry.get())
     actual_step_specs = my_builder.build()
 
     model_blessing_resolver_id = 'my_resolver2-model-blessing-resolver'
@@ -315,7 +324,8 @@ class StepBuilderTest(tf.test.TestCase):
         node=latest_model_resolver,
         deployment_config=deployment_config,
         pipeline_info=test_pipeline_info,
-        component_defs=component_defs)
+        component_defs=component_defs,
+        pipeline_registry=pipeline_registry.get())
     actual_step_spec = self._sole(my_builder.build())
     actual_component_def = self._sole(component_defs)
 
@@ -357,7 +367,7 @@ class StepBuilderTest(tf.test.TestCase):
             param1=1,
         )
     # Need to construct a pipeline to set producer_component_id.
-    unused_pipeline = tfx.dsl.Pipeline(
+    pipeline = tfx.dsl.Pipeline(
         pipeline_name='pipeline-with-condition',
         pipeline_root='',
         components=[producer_task_1, producer_task_2, consumer_task],
@@ -368,7 +378,8 @@ class StepBuilderTest(tf.test.TestCase):
         node=consumer_task,
         image='gcr.io/tensorflow/tfx:latest',
         deployment_config=deployment_config,
-        component_defs=component_defs)
+        component_defs=component_defs,
+        pipeline_registry=pipeline.pipeline_registry)
     actual_step_spec = self._sole(my_builder.build())
     actual_component_def = self._sole(component_defs)
 
@@ -396,6 +407,7 @@ class StepBuilderTest(tf.test.TestCase):
         image='gcr.io/tensorflow/tfx:latest',
         deployment_config=deployment_config,
         component_defs=component_defs,
+        pipeline_registry=pipeline_registry.get(),
         is_exit_handler=True)
     actual_step_spec = self._sole(my_builder.build())
     actual_component_def = self._sole(component_defs)

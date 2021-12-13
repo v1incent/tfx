@@ -15,7 +15,9 @@
 
 import enum
 from typing import Collection, List, Optional, Union, cast
+import warnings
 
+from tfx.dsl.auto_collect import pipeline_registry as reg
 from tfx.dsl.compiler import constants
 from tfx.dsl.components.base import base_node
 from tfx.dsl.components.base import executor_spec
@@ -23,6 +25,7 @@ from tfx.dsl.placeholder import placeholder as ph
 from tfx.orchestration import data_types
 from tfx.orchestration import metadata
 from tfx.types import channel_utils
+from tfx.utils import doc_controls
 from tfx.utils import topsort
 
 from google.protobuf import message
@@ -213,12 +216,13 @@ class Pipeline:
                pipeline_root: Union[str, ph.Placeholder],
                metadata_connection_config: Optional[
                    metadata.ConnectionConfigType] = None,
+               pipeline_registry: Optional[reg.PipelineRegistry] = None,
                components: Optional[List[base_node.BaseNode]] = None,
                enable_cache: Optional[bool] = False,
                beam_pipeline_args: Optional[List[str]] = None,
                platform_config: Optional[message.Message] = None,
                execution_mode: Optional[ExecutionMode] = ExecutionMode.SYNC,
-               **kwargs):
+               **kwargs):  # pylint: disable=g-doc-args (no argdoc for pipeline_registry)
     """Initialize pipeline.
 
     Args:
@@ -240,6 +244,10 @@ class Pipeline:
           f'pipeline {pipeline_name} exceeds maximum allowed length: {_MAX_PIPELINE_NAME_LENGTH}.'
       )
 
+    # Once pipeline is finalized, this instance is regarded as immutable and
+    # any detectable mutation will raise an error.
+    self._finalized = False
+
     # TODO(b/183621450): deprecate PipelineInfo.
     self.pipeline_info = data_types.PipelineInfo(  # pylint: disable=g-missing-from-attributes
         pipeline_name=pipeline_name,
@@ -255,13 +263,26 @@ class Pipeline:
     self.additional_pipeline_args = kwargs.get(  # pylint: disable=g-missing-from-attributes
         'additional_pipeline_args', {})
 
-    # Calls property setter.
-    self.components = components or []
+    self._pipeline_registry = pipeline_registry
+
+    # TODO(b/216581002): Use self._pipeline_registry.all_nodes as default value.
+    self._components = []
+    if components:
+      self._set_components(components)
+
+  def _check_mutable(self):
+    if self._finalized:
+      raise AssertionError('Cannot mutate Pipeline after finalize.')
 
   @property
   def beam_pipeline_args(self):
     """Beam pipeline args used for all components in the pipeline."""
     return self._beam_pipeline_args
+
+  @property
+  @doc_controls.do_not_generate_docs
+  def pipeline_registry(self) -> reg.PipelineRegistry:  # pylint: disable=g-missing-from-attributes
+    return self._pipeline_registry
 
   @property
   def components(self):
@@ -270,6 +291,12 @@ class Pipeline:
 
   @components.setter
   def components(self, components: List[base_node.BaseNode]):
+    self._set_components(components)
+
+  def _set_components(self, components: List[base_node.BaseNode]) -> None:
+    """Set a full list of components of the pipeline."""
+    self._check_mutable()
+
     deduped_components = set(components)
     node_by_id = {}
     # TODO(b/202822834): Use better distinction for bound channels.
@@ -323,3 +350,27 @@ class Pipeline:
     if self.beam_pipeline_args:
       for component in self._components:
         add_beam_pipeline_args_to_component(component, self.beam_pipeline_args)
+
+  @doc_controls.do_not_generate_docs
+  def finalize(self):
+    self._persist_pipeline_registry()
+    self._finalized = True
+
+  def _persist_pipeline_registry(self):
+    """Persist the pipeline registry to the pipeline."""
+    # If no pipeline_registry is given from the external,
+    if self._pipeline_registry is None:
+      self._pipeline_registry = reg.pop()
+    self._pipeline_registry.finalize()
+
+    given_components = set(self._components)
+    registry_components = set(self._pipeline_registry.all_nodes)
+    for unseen_component in given_components - registry_components:
+      warnings.warn(
+          f'Component {unseen_component.id} is not found in the pipeline '
+          'registry. You may want to move your component definition before the '
+          'Pipeline instantiation (and after any other Pipeline).')
+    for missing_component in registry_components - given_components:
+      warnings.warn(
+          f'Component {missing_component.id} is found but not included in the '
+          f'pipeline {self.pipeline_info.pipeline_name}. Did you forget?')

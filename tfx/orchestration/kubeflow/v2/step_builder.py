@@ -20,6 +20,7 @@ from absl import logging
 from kfp.pipeline_spec import pipeline_spec_pb2 as pipeline_pb2
 from tfx import components
 from tfx.components.evaluator import constants
+from tfx.dsl.auto_collect import pipeline_registry as reg
 from tfx.dsl.compiler import compiler_utils as tfx_compiler_utils
 from tfx.dsl.component.experimental import executor_specs
 from tfx.dsl.component.experimental import placeholders
@@ -131,6 +132,7 @@ class StepBuilder:
                node: base_node.BaseNode,
                deployment_config: pipeline_pb2.PipelineDeploymentConfig,
                component_defs: Dict[str, pipeline_pb2.ComponentSpec],
+               pipeline_registry: reg.PipelineRegistry,
                image: Optional[str] = None,
                image_cmds: Optional[List[str]] = None,
                beam_pipeline_args: Optional[List[str]] = None,
@@ -153,6 +155,8 @@ class StepBuilder:
       deployment_config: The deployment config in Kubeflow IR to be populated.
       component_defs: Dict mapping from node id to compiled ComponetSpec proto.
         Items in the dict will get updated as the pipeline is built.
+      pipeline_registry: A PipelineRegistry instance from
+        Pipeline.pipeline_registry.
       image: TFX image used in the underlying container spec. Required if node
         is a TFX component.
       image_cmds: Optional. If not specified the default `ENTRYPOINT` defined
@@ -186,6 +190,7 @@ class StepBuilder:
     self._node = node
     self._deployment_config = deployment_config
     self._component_defs = component_defs
+    self._pipeline_registry = pipeline_registry
     self._inputs = node.inputs
     self._outputs = node.outputs
     self._enable_cache = enable_cache
@@ -254,7 +259,7 @@ class StepBuilder:
     # Conditionals
     implicit_input_channels = {}
     implicit_upstream_node_ids = set()
-    predicates = conditional.get_predicates(self._node)
+    predicates = conditional.get_predicates(self._node, self._pipeline_registry)
     if predicates:
       implicit_keys_map = {
           tfx_compiler_utils.implicit_channel_key(channel): key

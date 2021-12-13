@@ -15,13 +15,15 @@
 from typing import Tuple
 
 import attr
+from tfx.dsl.auto_collect import dsl_context
+from tfx.dsl.auto_collect import dsl_context_manager
+from tfx.dsl.auto_collect import pipeline_registry
 from tfx.dsl.components.base import base_node
-from tfx.dsl.context_managers import context_manager
 from tfx.dsl.placeholder import placeholder
 
 
 @attr.s(auto_attribs=True, kw_only=True)
-class ConditionalContext(context_manager.DslContext):
+class ConditionalContext(dsl_context.DslContext):
   """DslContext for Cond."""
   predicate: placeholder.Predicate
 
@@ -35,14 +37,16 @@ class ConditionalContext(context_manager.DslContext):
 
 
 def get_predicates(
-    node: base_node.BaseNode) -> Tuple[placeholder.Predicate, ...]:
+    node: base_node.BaseNode,
+    registry: pipeline_registry.PipelineRegistry,
+) -> Tuple[placeholder.Predicate, ...]:
   """Gets all predicates that conditional contexts for the node carry."""
   return tuple(c.predicate
-               for c in context_manager.get_contexts(node)
+               for c in registry.get_contexts(node)
                if isinstance(c, ConditionalContext))
 
 
-class Cond(context_manager.DslContextManager[None]):
+class Cond(dsl_context_manager.DslContextManager[None]):
   """Cond context manager that disable containing nodes if predicate is False.
 
   Cond blocks can be nested to express the nested conditions.

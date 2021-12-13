@@ -16,12 +16,14 @@
 import attr
 
 from tfx import types
+from tfx.dsl.auto_collect import dsl_context
+from tfx.dsl.auto_collect import dsl_context_manager
+from tfx.dsl.auto_collect import pipeline_registry
 from tfx.dsl.components.base import base_node
-from tfx.dsl.context_managers import context_manager
 
 
 @attr.s(auto_attribs=True, kw_only=True)
-class ForEachContext(context_manager.DslContext):
+class ForEachContext(dsl_context.DslContext):
   """DslContext for ForEach."""
   wrapped_channel: types.BaseChannel
 
@@ -31,7 +33,7 @@ class ForEachContext(context_manager.DslContext):
         raise NotImplementedError('Nested ForEach block is not supported yet.')
 
   def will_add_node(self, node: base_node.BaseNode):
-    if self.nodes:
+    if pipeline_registry.get().get_nodes(self):
       raise NotImplementedError(
           'Defining multiple nodes inside ForEach block is not supported yet. '
           'Try placing a node in a separate ForEach block.')
@@ -56,7 +58,7 @@ class ForEachContext(context_manager.DslContext):
           'outside the ForEach block.')
 
 
-class ForEach(context_manager.DslContextManager[types.LoopVarChannel]):
+class ForEach(dsl_context_manager.DslContextManager[types.LoopVarChannel]):
   """ForEach context manager.
 
   ForEach context manager is a declarative version of For loop in a pipeline

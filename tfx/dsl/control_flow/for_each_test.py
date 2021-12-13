@@ -15,8 +15,8 @@
 
 import tensorflow as tf
 from tfx import types
+from tfx.dsl.auto_collect import pipeline_registry
 from tfx.dsl.components.base import base_node
-from tfx.dsl.context_managers import context_manager
 from tfx.dsl.control_flow import for_each
 
 
@@ -71,12 +71,9 @@ class C(FakeNode):
 
 class ForEachTest(tf.test.TestCase):
 
-  def setUp(self):
-    super().setUp()
-    self.reset_registry()
-
-  def reset_registry(self) -> None:
-    context_manager._registry = context_manager._DslContextRegistry()
+  def tearDown(self):
+    pipeline_registry.pop()
+    super().tearDown()
 
   def testForEach_As_GivesLoopVariable(self):
     a = A().with_id('Apple')
@@ -125,8 +122,8 @@ class ForEachTest(tf.test.TestCase):
     with for_each.ForEach(a.outputs['aa']) as aa2:
       c2 = C(aa=aa2, bb=b.outputs['bb'])  # pylint: disable=unused-variable
 
-    context1 = context_manager.get_contexts(c1)[-1]
-    context2 = context_manager.get_contexts(c2)[-1]
+    context1 = pipeline_registry.get().get_contexts(c1)[-1]
+    context2 = pipeline_registry.get().get_contexts(c2)[-1]
     self.assertNotEqual(context1.id, context2.id)
 
 
