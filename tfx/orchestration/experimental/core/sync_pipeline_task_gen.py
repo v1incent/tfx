@@ -240,28 +240,35 @@ class _Generator:
       return result
 
     node_executions = task_gen_utils.get_executions(self._mlmd_handle, node)
-    latest_execution = task_gen_utils.get_latest_execution(node_executions)
+    latest_executions_set = task_gen_utils.get_latest_executions_set(
+        node_executions)
 
-    # If the latest execution is successful, we're done.
-    if latest_execution and execution_lib.is_execution_successful(
-        latest_execution):
+    # If all the executions in the set for the node are successful, we're done.
+    if latest_executions_set and all(
+        execution_lib.is_execution_successful(e)
+        for e in latest_executions_set):
       logging.info('Node successful: %s', node_uid)
       result.append(
           task_lib.UpdateNodeStateTask(
               node_uid=node_uid, state=pstate.NodeState.COMPLETE))
       return result
 
-    # If the latest execution failed or cancelled, the pipeline should be
-    # aborted if the node is not in state STARTING. For nodes that are
-    # in state STARTING, a new execution is created.
-    if (latest_execution and
-        not execution_lib.is_execution_active(latest_execution) and
-        node_state.state != pstate.NodeState.STARTING):
-      error_msg_value = latest_execution.custom_properties.get(
-          constants.EXECUTION_ERROR_MSG_KEY)
-      error_msg = data_types_utils.get_metadata_value(
-          error_msg_value) if error_msg_value else ''
-      error_msg = f'node failed; node uid: {node_uid}; error: {error_msg}'
+    # If one of the executions in the set for the node failed or cancelled, the
+    # pipeline should be aborted if the node is not in state STARTING.
+    # For nodes that are in state STARTING, new executions are created.
+    failed_executions = [
+        e for e in latest_executions_set
+        if not execution_lib.is_execution_active(e) and
+        not execution_lib.is_execution_successful(e)
+    ]
+    if failed_executions and node_state.state != pstate.NodeState.STARTING:
+      error_msg = ''
+      for e in failed_executions:
+        error_msg_value = e.custom_properties.get(
+            constants.EXECUTION_ERROR_MSG_KEY)
+        error_msg_value = data_types_utils.get_metadata_value(
+            error_msg_value) if error_msg_value else ''
+        error_msg += f'node failed; node uid: {node_uid}; error: {error_msg_value}. '
       result.append(
           task_lib.UpdateNodeStateTask(
               node_uid=node_uid,
@@ -270,14 +277,21 @@ class _Generator:
                   code=status_lib.Code.ABORTED, message=error_msg)))
       return result
 
-    exec_node_task = task_gen_utils.generate_task_from_active_execution(
-        self._mlmd_handle, self._pipeline, node, node_executions)
-    if exec_node_task:
-      result.append(
-          task_lib.UpdateNodeStateTask(
-              node_uid=node_uid, state=pstate.NodeState.RUNNING))
-      result.append(exec_node_task)
-      return result
+    latest_active_execution = task_gen_utils.get_latest_active_execution(
+        latest_executions_set)
+    if latest_active_execution:
+      latest_active_execution = (
+          execution_publish_utils.publish_running_execution(
+              metadata_handler=self._mlmd_handle,
+              execution_id=latest_active_execution.id))
+      exec_node_task = task_gen_utils.generate_task_from_active_execution(
+          self._mlmd_handle, self._pipeline, node, [latest_active_execution])
+      if exec_node_task:
+        result.append(
+            task_lib.UpdateNodeStateTask(
+                node_uid=node_uid, state=pstate.NodeState.RUNNING))
+        result.append(exec_node_task)
+        return result
 
     # Finally, we are ready to generate tasks for the node by resolving inputs.
     result.extend(self._resolve_inputs_and_generate_tasks_for_node(node))
@@ -307,15 +321,21 @@ class _Generator:
               status=status_lib.Status(
                   code=status_lib.Code.ABORTED, message=error_msg)))
       return result
-    # TODO(b/207038460): Update sync pipeline to support ForEach.
-    input_artifacts = resolved_info.input_artifacts[0]
 
-    execution = execution_publish_utils.register_execution(
+    executions = task_gen_utils.register_executions(
         metadata_handler=self._mlmd_handle,
         execution_type=node.node_info.type,
         contexts=resolved_info.contexts,
-        input_artifacts=input_artifacts,
+        input_dicts=resolved_info.input_artifacts,
         exec_properties=resolved_info.exec_properties)
+
+    # Selects the first artifacts and create a exec task.
+    index = 0
+    input_artifacts = resolved_info.input_artifacts[index]
+    # Selects the first execution and marks it as RUNNING.
+    execution = execution_publish_utils.publish_running_execution(
+        metadata_handler=self._mlmd_handle, execution_id=executions[index].id)
+
     outputs_resolver = outputs_utils.OutputsResolver(
         node, self._pipeline.pipeline_info, self._pipeline.runtime_spec,
         self._pipeline.execution_mode)

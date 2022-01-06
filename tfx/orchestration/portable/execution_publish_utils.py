@@ -95,6 +95,28 @@ def _set_execution_result_if_not_empty(
           'execution due to error')
 
 
+def publish_running_execution(
+    metadata_handler: metadata.Metadata,
+    execution_id: int,
+) -> metadata_store_pb2.Execution:
+  """Marks an existing execution as RUNNING.
+
+  Args:
+    metadata_handler: A handler to access MLMD.
+    execution_id: The id of the execution.
+
+  Returns:
+    An MLMD execution that is marked as RUNNING.
+  """
+  [execution] = metadata_handler.store.get_executions_by_id([execution_id])
+  if execution.last_known_state == metadata_store_pb2.Execution.RUNNING:
+    return execution
+
+  contexts = metadata_handler.store.get_contexts_by_execution(execution_id)
+  execution.last_known_state = metadata_store_pb2.Execution.RUNNING
+  return execution_lib.put_execution(metadata_handler, execution, contexts)
+
+
 def publish_succeeded_execution(
     metadata_handler: metadata.Metadata,
     execution_id: int,

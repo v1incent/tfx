@@ -14,7 +14,7 @@
 """Utilities for task generation."""
 
 import itertools
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
 from absl import logging
 import attr
@@ -34,6 +34,9 @@ from tfx.utils import typing_utils
 import ml_metadata as mlmd
 from ml_metadata.proto import metadata_store_pb2
 from google.protobuf import any_pb2
+
+_EXECUTION_SET_SIZE = '__execution_set_size__'
+_EXECUTION_SEQ_NUM = '__execution_seq_num__'
 
 
 @attr.s(auto_attribs=True)
@@ -238,6 +241,16 @@ def is_latest_execution_successful(
       execution) if execution else False
 
 
+def get_latest_active_execution(
+    executions: Iterable[metadata_store_pb2.Execution]
+) -> Optional[metadata_store_pb2.Execution]:
+  """Returns the latest successful execution or `None` if no successful executions exist."""
+  active_executions = [
+      e for e in executions if execution_lib.is_execution_active(e)
+  ]
+  return get_latest_execution(active_executions)
+
+
 def get_latest_successful_execution(
     executions: Iterable[metadata_store_pb2.Execution]
 ) -> Optional[metadata_store_pb2.Execution]:
@@ -256,6 +269,36 @@ def get_latest_execution(
   return sorted_executions[0] if sorted_executions else None
 
 
+def get_latest_executions_set(
+    executions: Iterable[metadata_store_pb2.Execution]
+) -> List[metadata_store_pb2.Execution]:
+  """Returns latest set of exectuions."""
+  sorted_executions = execution_lib.sort_executions_newest_to_oldest(executions)
+  if not sorted_executions:
+    return []
+
+  size = sorted_executions[0].custom_properties.get(_EXECUTION_SET_SIZE)
+  if not size:
+    return [sorted_executions[0]]
+
+  if len(sorted_executions) < size.int_value:
+    return []
+
+  # TODO(b/209883142): After we can register several executions in one
+  # transaction, the following code can be simplified.
+  # But before the feature is implemented, we can abandon those partially
+  # registered executions. For example, if orchestrator fail after publishing
+  # 1/3 and 2/3 but before 3/3, this function return empty array.
+  latest_execution_set = []
+  for i in reversed(range(size.int_value)):
+    if sorted_executions[i].custom_properties.get(
+        _EXECUTION_SEQ_NUM).int_value != size.int_value - i - 1:
+      return []
+    latest_execution_set.append(sorted_executions[i])
+
+  return latest_execution_set
+
+
 # TODO(b/182944474): Raise error in _get_executor_spec if executor spec is
 # missing for a non-system node.
 def get_executor_spec(pipeline: pipeline_pb2.Pipeline,
@@ -267,3 +310,47 @@ def get_executor_spec(pipeline: pipeline_pb2.Pipeline,
   depl_config = pipeline_pb2.IntermediateDeploymentConfig()
   pipeline.deployment_config.Unpack(depl_config)
   return depl_config.executor_specs.get(node_id)
+
+
+def register_executions(
+    metadata_handler: metadata.Metadata,
+    execution_type: metadata_store_pb2.ExecutionType,
+    contexts: Sequence[metadata_store_pb2.Context],
+    input_dicts: List[typing_utils.ArtifactMultiMap],
+    exec_properties: Optional[Mapping[str, types.ExecPropertyTypes]] = None,
+) -> List[metadata_store_pb2.Execution]:
+  """Registers multiple executions in MLMD.
+
+  Along with the execution:
+  -  the input artifacts will be linked to the executions.
+  -  the contexts will be linked to both the executions and its input artifacts.
+
+  Args:
+    metadata_handler: A handler to access MLMD.
+    execution_type: The type of the execution.
+    contexts: MLMD contexts to associated with the executions.
+    input_dicts: A list of dictionaries of artifacts. One execution will be
+      registered for each of the input_dict.
+    exec_properties: Execution properties. Will be attached to the executions.
+
+  Returns:
+    A list of MLMD executions that are registered in MLMD, with id populated.
+      All regiested executions have state of NEW.
+  """
+  executions = []
+  # TODO(b/207038460): Use the new feature of batch executions update once it is
+  # implemented (b/209883142).
+  for idx, input_artifacts in enumerate(input_dicts):
+    execution = execution_lib.prepare_execution(
+        metadata_handler, execution_type, metadata_store_pb2.Execution.NEW,
+        exec_properties)
+    execution.custom_properties[_EXECUTION_SET_SIZE].int_value = len(
+        input_dicts)
+    execution.custom_properties[_EXECUTION_SEQ_NUM].int_value = idx
+    executions.append(
+        execution_lib.put_execution(
+            metadata_handler,
+            execution,
+            contexts,
+            input_artifacts=input_artifacts))
+  return executions

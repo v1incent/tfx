@@ -127,6 +127,18 @@ class ImporterTaskSchedulerTest(test_utils.TfxTest):
           """
           last_known_state: COMPLETE
           custom_properties {
+            key: "__execution_set_size__"
+            value {
+              int_value: 1
+            }
+          }
+          custom_properties {
+            key: "__execution_seq_num__"
+            value {
+              int_value: 0
+            }
+          }
+          custom_properties {
             key: "artifact_uri"
             value {
               string_value: "my_url"
