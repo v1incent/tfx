@@ -16,20 +16,26 @@
 from typing import Dict, List, Optional
 
 from tfx import types
-from tfx.components.example_gen import utils
 from tfx.dsl.components.common import resolver
 from tfx.proto import range_config_pb2
 from tfx.utils import doc_controls
 
 import ml_metadata as mlmd
 
+try:
+  from tfx.components.example_gen import utils  # pylint: disable=g-import-not-at-top
+  _SPAN = utils.SPAN_PROPERTY_NAME
+except ImportError:
+  # ml-pipeline-sdk package doesn't have tfx.components.
+  _SPAN = 'span'
+
 
 def _get_span_custom_property(artifact: types.Artifact) -> int:
   # For backward compatibility, span may be stored as a string.
-  str_span = artifact.get_string_custom_property(utils.SPAN_PROPERTY_NAME)
+  str_span = artifact.get_string_custom_property(_SPAN)
   if str_span:
     return int(str_span)
-  return artifact.get_int_custom_property(utils.SPAN_PROPERTY_NAME)
+  return artifact.get_int_custom_property(_SPAN)
 
 
 class SpanRangeStrategy(resolver.ResolverStrategy):
@@ -63,7 +69,7 @@ class SpanRangeStrategy(resolver.ResolverStrategy):
         end_span_number = self._range_config.static_range.end_span_number
         # Get the artifacts within range.
         for artifact in artifact_list:
-          if not artifact.has_custom_property(utils.SPAN_PROPERTY_NAME):
+          if not artifact.has_custom_property(_SPAN):
             raise RuntimeError(f'Span does not exist for {artifact}')
           span = _get_span_custom_property(artifact)
           if span >= start_span_number and span <= end_span_number:
@@ -77,7 +83,7 @@ class SpanRangeStrategy(resolver.ResolverStrategy):
         most_recent_span = -1
         # Get most recent span number.
         for artifact in artifact_list:
-          if not artifact.has_custom_property(utils.SPAN_PROPERTY_NAME):
+          if not artifact.has_custom_property(_SPAN):
             raise RuntimeError(f'Span does not exist for {artifact}')
           span = _get_span_custom_property(artifact)
           if span > most_recent_span:
