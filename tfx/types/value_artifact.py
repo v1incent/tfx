@@ -14,10 +14,11 @@
 """TFX artifact type definition."""
 
 import abc
-from typing import Any
+from typing import Any, Type, Optional
 
 from tfx.dsl.io import fileio
 from tfx.types.artifact import Artifact
+from tfx.types.system_artifacts import SystemArtifact
 from tfx.utils import doc_controls
 
 _IS_NULL_KEY = '__is_null__'
@@ -87,3 +88,45 @@ class ValueArtifact(Artifact):
   def encode(self, value) -> Any:
     """Method encoding the file content. Implemented by subclasses."""
     pass
+
+  @classmethod
+  def annotate_as(cls, type_annotation: Optional[Type[SystemArtifact]] = None):
+    """Annotate the value artifact type with a system artifact class.
+
+    Example usage:
+
+    from tfx.types.system_artifacts import Model
+    ...
+    tfx.Binary(
+      name=component_name,
+      mpm_or_target=...,
+      flags=...,
+      outputs={
+          'experiment_id': standard_artifacts.String.annotate_as(Model)
+      })
+
+    Args:
+      type_annotation: the system artifact class used to annotate the value
+        artifact type. It is a subclass of SystemArtifact. The subclasses are
+        defined in third_party/py/tfx/types/system_artifacts.py.
+
+    Returns:
+      A subclass of the method caller class (e.g., standard_artifacts.String,
+      standard_artifacts.Float) with TYPE_ANNOTATION attribute set to be
+      `type_annotation`; returns the class itself when`type_annotation` is None.
+    """
+    if not type_annotation:
+      return cls
+    if not issubclass(type_annotation, SystemArtifact):
+      raise ValueError(
+          'type_annotation %s is not a subclass of SystemArtifact.' %
+          type_annotation)
+    type_annotation_str = str(type_annotation.__name__)
+    return type(
+        str(cls.__name__) + '_' + type_annotation_str,
+        (cls,),
+        dict(
+            TYPE_NAME=str(cls.TYPE_NAME) + '_' + type_annotation_str,
+            TYPE_ANNOTATION=type_annotation,
+        ),
+    )

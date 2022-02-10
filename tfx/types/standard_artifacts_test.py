@@ -19,6 +19,7 @@ from unittest import mock
 import absl
 import tensorflow as tf
 from tfx.types import standard_artifacts
+from tfx.types.system_artifacts import SystemArtifact
 
 # Define constant value for tests.
 _TEST_BYTE_RAW = b'hello world'
@@ -53,6 +54,18 @@ class StandardArtifactsTest(tf.test.TestCase):
 
   def testStringType(self):
     instance = standard_artifacts.String()
+    self.assertEqual(_TEST_STRING_RAW, instance.encode(_TEST_STRING_DECODED))
+    self.assertEqual(_TEST_STRING_DECODED, instance.decode(_TEST_STRING_RAW))
+
+  def testStringTypeAnnotateAsModel(self):
+
+    class MyModel(SystemArtifact):
+
+      MLMD_SYSTEM_BASE_TYPE = 2
+
+    # Verifies the annotated value artifact still preserves the primitive type
+    # conveniences.
+    instance = standard_artifacts.String.annotate_as(MyModel)()
     self.assertEqual(_TEST_STRING_RAW, instance.encode(_TEST_STRING_DECODED))
     self.assertEqual(_TEST_STRING_DECODED, instance.decode(_TEST_STRING_RAW))
 

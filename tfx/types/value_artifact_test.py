@@ -19,6 +19,7 @@ from unittest import mock
 import tensorflow as tf
 from tfx.dsl.io import fileio
 from tfx.types import value_artifact
+from tfx.types.system_artifacts import SystemArtifact
 
 
 _IS_NULL_KEY = '__is_null__'
@@ -33,6 +34,11 @@ class _MyValueArtifact(value_artifact.ValueArtifact):
 
   def decode(self, value: bytes):
     return value.decode('utf-8')
+
+
+class MyDataset(SystemArtifact):
+
+  MLMD_SYSTEM_BASE_TYPE = 1
 
 
 # Mock values for string artifact.
@@ -111,6 +117,24 @@ class ValueArtifactTest(tf.test.TestCase):
     with self.assertRaisesRegex(
         RuntimeError, 'Given path does not exist or is not a valid file'):
       instance.read()
+
+  def testTypeAnnotation(self):
+    annotation_class = _MyValueArtifact.annotate_as(MyDataset)
+    self.assertEqual(annotation_class.__name__, '_MyValueArtifact_MyDataset')
+    self.assertEqual(annotation_class.TYPE_NAME, 'MyValueTypeName_MyDataset')
+    self.assertEqual(annotation_class.TYPE_ANNOTATION.MLMD_SYSTEM_BASE_TYPE,
+                     MyDataset.MLMD_SYSTEM_BASE_TYPE)
+    self.assertEqual(annotation_class._get_artifact_type().base_type,
+                     MyDataset.MLMD_SYSTEM_BASE_TYPE)
+
+    # invalid annotation class
+    with self.assertRaisesRegex(
+        ValueError, 'is not a subclass of SystemArtifact'):
+      _MyValueArtifact.annotate_as(value_artifact.ValueArtifact)
+
+    # no argument
+    annotation_class = _MyValueArtifact.annotate_as()
+    self.assertEqual(annotation_class.__name__, '_MyValueArtifact')
 
 
 if __name__ == '__main__':
