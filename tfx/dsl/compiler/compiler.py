@@ -29,8 +29,7 @@ from tfx.dsl.control_flow import for_each
 from tfx.dsl.experimental.conditionals import conditional
 from tfx.dsl.input_resolution import resolver_function
 from tfx.dsl.input_resolution import resolver_op
-from tfx.dsl.input_resolution.ops import skip_if_empty_op
-from tfx.dsl.input_resolution.ops import unnest_op
+from tfx.dsl.input_resolution.ops import ops
 from tfx.dsl.placeholder import placeholder
 from tfx.orchestration import data_types
 from tfx.orchestration import data_types_utils
@@ -41,6 +40,7 @@ from tfx.types import channel_utils
 from tfx.types import value_artifact
 from tfx.utils import deprecation_utils
 from tfx.utils import json_utils
+from tfx.utils import name_utils
 
 from ml_metadata.proto import metadata_store_pb2
 
@@ -617,7 +617,7 @@ class Compiler:
 
 def _fully_qualified_name(cls: Type[Any]):
   cls = deprecation_utils.get_first_nondeprecated_class(cls)
-  return f"{cls.__module__}.{cls.__qualname__}"
+  return name_utils.get_full_name(cls)
 
 
 def _compile_resolver_op(
@@ -658,8 +658,8 @@ def _compile_for_each_context(
 
   @resolver_function.resolver_function
   def impl(input_node):
-    items = unnest_op.Unnest(input_node, key=input_key)
-    return skip_if_empty_op.SkipIfEmpty(items)
+    items = ops.Unnest(input_node, key=input_key)
+    return ops.SkipIfEmpty(items)
 
   return _compile_resolver_function(impl)
 
